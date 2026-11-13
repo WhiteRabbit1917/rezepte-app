@@ -1,0 +1,49 @@
+name: APK bauen
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Projekt entpacken
+        run: unzip -o projekt.zip -d app
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Pakete installieren
+        working-directory: app
+        run: npm install
+      - name: Android-Projekt erzeugen
+        working-directory: app
+        run: npx cap add android
+      - name: App-Symbol und Startbild erzeugen
+        working-directory: app
+        continue-on-error: true
+        run: npx --yes @capacitor/assets@3 generate --android --iconBackgroundColor '#c8472a' --splashBackgroundColor '#f4f2ee'
+      - name: Signatur und Leisten anpassen
+        working-directory: app
+        run: python3 patch.py
+      - name: Dateien abgleichen
+        working-directory: app
+        run: npx cap sync android
+      - name: APK bauen
+        working-directory: app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+      - name: APK veröffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/android/app/build/outputs/apk/debug/app-debug.apk Meine-Rezepte.apk
+          gh release delete apk -y --cleanup-tag || true
+          gh release create apk Meine-Rezepte.apk --title "Meine Rezepte (APK)" --notes "Neueste Version – zum Installieren die Datei Meine-Rezepte.apk laden."
